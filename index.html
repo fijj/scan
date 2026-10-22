@@ -24,8 +24,14 @@
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .conn { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .menu-btn { display: none; }
-  .menu-panel { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .menu { position: relative; }
+  .menu-btn { display: inline-flex; align-items: center; gap: 6px; }
+  .menu-btn .dot[hidden] { display: none; }
+  .menu-panel { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 6; flex-direction: column; align-items: stretch; gap: 8px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; min-width: 260px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+  .menu.open .menu-panel { display: flex; }
+  .menu-sec { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 4px; }
+  .menu-sec:first-child { margin-top: 0; }
   .mob { display: none; }
   .stats { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
   .stats b { font: 600 22px/1.2 ui-monospace, Consolas, monospace; }
@@ -35,7 +41,7 @@
   button.danger { background: var(--err); border-color: var(--err); color: #fff; }
   button:disabled { opacity: .5; cursor: default; }
   button.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  input[type=text], input[type=number] { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); min-width: 0; }
+  input[type=text], input[type=number], select { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); min-width: 0; }
   label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
   .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
@@ -92,11 +98,6 @@
     .conn button { padding: 5px 10px; font-size: 14px; }
     .conn .status { font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cam { height: 28vh; margin-bottom: 6px; }
-    .menu { position: relative; }
-    .menu-btn { display: block; padding: 3px 12px; font-weight: 700; }
-    .menu-panel { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 6; flex-direction: column; align-items: stretch;
-      background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; min-width: 200px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
-    .menu.open .menu-panel { display: flex; }
     .stats { gap: 6px 12px; }
     .stats b { font-size: 17px; }
     .stats .lbl, .stats .spacer { display: none; }
@@ -116,18 +117,34 @@
     <h1>Инвентаризация склада</h1>
 
     <div class="card conn">
-      <button id="btnSerial" class="primary">Подключить<span class="desk"> сканер</span></button>
-      <button id="btnSerialOff" disabled>Отключить</button>
-      <span class="status"><span id="serialDot" class="dot"></span><span id="serialStatus">Не подключено</span></span>
+      <button id="btnCam" class="primary" title="Сканировать камерой">📷<span class="desk"> Камера</span></button>
       <span class="spacer"></span>
-      <button id="btnCam" title="Сканировать камерой">📷<span class="desk"> Камера</span></button>
       <div class="menu" id="menu">
-        <button class="menu-btn" id="menuBtn">⋯</button>
+        <button class="menu-btn" id="menuBtn" title="Настройки сканера">
+          <span id="menuDot" class="dot" hidden></span>⚙<span class="desk"> Настройки</span>
+        </button>
         <div class="menu-panel">
-          <label><input type="checkbox" id="optKeyboard" checked> Сканер-клавиатура</label>
+          <div class="menu-sec">Сканер через COM-порт</div>
+          <div class="row">
+            <button id="btnSerial" class="primary">Подключить</button>
+            <button id="btnSerialOff" disabled>Отключить</button>
+          </div>
+          <span class="status"><span id="serialDot" class="dot"></span><span id="serialStatus">Не подключено</span></span>
+
+          <div class="menu-sec">Сканер-клавиатура</div>
+          <label><input type="checkbox" id="optKeyboard" checked> Включена</label>
           <label title="Максимальная пауза между символами от сканера. Если коды не распознаются — увеличьте; если ручной ввод принимается за скан — уменьшите.">Задержка, мс <input type="number" id="optKbGap" min="10" max="1000" step="10" value="300" style="width:75px"></label>
+
+          <div class="menu-sec">Камера</div>
+          <label>Скан
+            <select id="optCamMode">
+              <option value="button">по кнопке</option>
+              <option value="auto">автоматически</option>
+            </select>
+          </label>
+
+          <div class="menu-sec">Общее</div>
           <label><input type="checkbox" id="optBeep" checked> Звук</label>
-          <label title="Камера засчитывает код только по нажатию кнопки «Сканировать» внизу экрана"><input type="checkbox" id="optCamTrigger" checked> Камера: скан по кнопке</label>
           <button class="mob" data-act="csv">Скачать CSV</button>
           <button class="mob" data-act="reset">Начать заново</button>
         </div>
@@ -411,6 +428,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function setSerialStatus(text, state) {
   $('serialStatus').textContent = text;
   $('serialDot').className = 'dot' + (state ? ' ' + state : '');
+  // Индикатор на кнопке настроек — чтобы статус был виден при закрытом меню
+  $('menuDot').className = $('serialDot').className;
+  $('menuDot').hidden = !state;
   $('btnSerial').disabled = !!serialPort;
   $('btnSerialOff').disabled = !serialPort;
 }
@@ -675,7 +695,9 @@ function acceptCamCode(code) {
 // Если код уже в рамке — засчитывается сразу, иначе ждём его появления ещё CAM_ARM_MS.
 
 const CAM_ARM_MS = 1500;
-const triggerMode = () => $('optCamTrigger').checked;
+const CAM_MODE_KEY = 'inventory-cam-mode';
+const triggerMode = () => $('optCamMode').value === 'button';
+try { $('optCamMode').value = localStorage.getItem(CAM_MODE_KEY) || 'button'; } catch (e) { /* по умолчанию */ }
 
 function camTrigger() {
   if (!cam.stream || modalOpen) return;
@@ -703,7 +725,10 @@ function updateScanBar() {
 }
 
 $('btnTrigger').onclick = camTrigger;
-$('optCamTrigger').onchange = updateScanBar;
+$('optCamMode').onchange = () => {
+  try { localStorage.setItem(CAM_MODE_KEY, $('optCamMode').value); } catch (e) { /* без сохранения */ }
+  updateScanBar();
+};
 // Кнопки громкости: Chrome на Android их странице не передаёт, но другие браузеры могут
 document.addEventListener('keydown', e => {
   if (cam.stream && triggerMode() && (e.key === 'AudioVolumeUp' || e.key === 'AudioVolumeDown')) {
@@ -769,7 +794,7 @@ async function resetAll() {
   $('lastQty').textContent = '—';
 }
 
-// Меню «⋯» есть только в мобильной версии
+// Меню настроек сканера
 const closeMenu = () => $('menu').classList.remove('open');
 $('menuBtn').onclick = () => $('menu').classList.toggle('open');
 document.addEventListener('click', e => { if (!$('menu').contains(e.target)) closeMenu(); });
