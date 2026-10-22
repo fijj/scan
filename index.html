@@ -59,8 +59,7 @@
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 500; font-size: 13px; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.mono { font-family: ui-monospace, Consolas, monospace; }
-  td.act { white-space: nowrap; text-align: right; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; }  td.act { white-space: nowrap; text-align: right; }
   td.act button { padding: 2px 9px; }
   tr.ok td { background: var(--row-ok); }
   tr.over td { background: var(--row-over); }
@@ -173,7 +172,7 @@
     </div>
 
     <div class="filters">
-      <input type="text" id="search" placeholder="Поиск по артикулу или штрихкоду">
+      <input type="text" id="search" placeholder="Поиск по артикулу, названию или штрихкоду">
       <div class="chips">
         <button data-f="all" class="active">Все <span id="cAll"></span></button>
         <button data-f="none">Не начато <span id="cNone"></span></button>
@@ -210,7 +209,7 @@
 <script src="products.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const STORAGE_KEY = 'inventory-counts-v2';
+const STORAGE_KEY = 'inventory-counts-v3';
 
 const byBarcode = new Map(PRODUCTS.map(p => [p.barcode, p]));
 const rowOf = new Map();
@@ -284,7 +283,8 @@ function applyFilter() {
   const q = $('search').value.trim().toLowerCase();
   for (const p of PRODUCTS) {
     const tr = rowOf.get(p.barcode);
-    const matchText = !q || p.article.toLowerCase().includes(q) || p.barcode.includes(q);
+    const matchText = !q || p.article.toLowerCase().includes(q) || p.barcode.includes(q)
+      || (p.name || '').toLowerCase().includes(q);
     const matchState = filter === 'all' || tr.dataset.state === filter;
     tr.style.display = matchText && matchState ? '' : 'none';
   }
@@ -770,9 +770,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) camSt
 function exportCsv() {
   const esc = s => `"${String(s).replace(/"/g, '""')}"`;
   const names = { none: 'не отсканировано', short: 'недостача', ok: 'сходится', over: 'излишек' };
-  const lines = ['Артикул;Штрихкод;Остаток;Факт;Разница;Статус', ...PRODUCTS.map(p => {
+  const lines = ['Артикул;Наименование;Штрихкод;Остаток;Факт;Разница;Статус', ...PRODUCTS.map(p => {
     const c = counts[p.barcode] || 0;
-    return [p.article, p.barcode, p.stock, c, c - p.stock, names[stateOf(p)]].map(esc).join(';');
+    return [p.article, p.name || '', p.barcode, p.stock, c, c - p.stock, names[stateOf(p)]].map(esc).join(';');
   })];
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' });
   const a = document.createElement('a');
