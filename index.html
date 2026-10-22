@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Инвентаризация склада</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280;
+    --border: #e2e5ea; --accent: #2563eb; --ok: #16a34a; --err: #dc2626;
+    --row-ok: #dcfce7; --row-over: #fef3c7; --row-short: #fee2e2; --flash: #93c5fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --card: #1b1f26; --text: #e6e8eb; --muted: #9aa3ad; --border: #2c323b; --accent: #4f8cff;
+      --row-ok: #14532d; --row-over: #713f12; --row-short: #7f1d1d; --flash: #1e40af;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 1000px; margin: 0 auto; padding: 0 16px 40px; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 0 8px; }
+  h1 { font-size: 20px; margin: 0 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .conn { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .menu-btn { display: none; }
+  .menu-panel { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .mob { display: none; }
+  .stats { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  .stats b { font: 600 22px/1.2 ui-monospace, Consolas, monospace; }
+  .lbl { display: block; color: var(--muted); font-size: 13px; }
+  button { font: inherit; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--err); border-color: var(--err); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  input[type=text], input[type=number] { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); min-width: 0; }
+  label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); } .dot.err { background: var(--err); }
+  .spacer { flex: 1; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .progress { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+  .progress > div { height: 100%; background: var(--ok); width: 0; transition: width .2s; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  #search { flex: 1; min-width: 180px; }
+  .chips { display: contents; }
+  .filters button { padding: 5px 10px; font-size: 14px; }
+  .chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 13px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; }
+  td.act { white-space: nowrap; text-align: right; }
+  td.act button { padding: 2px 9px; }
+  tr.ok td { background: var(--row-ok); }
+  tr.over td { background: var(--row-over); }
+  tr.short td { background: var(--row-short); }
+  tr.flash td { animation: flash .5s ease-in-out 2; }
+  @keyframes flash { 50% { background: var(--flash); } }
+  .cam { position: relative; background: #000; border-radius: 10px; overflow: hidden; height: 260px; margin-bottom: 10px; }
+  .cam[hidden] { display: none; }
+  .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cam-frame { position: absolute; left: 12%; right: 12%; top: 28%; bottom: 28%; border: 2px solid rgba(255,255,255,.8); border-radius: 8px; transition: border-color .15s, background .15s; }
+  .cam-frame.hit { border-color: var(--ok); background: rgba(22,163,74,.2); }
+  .cam-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+  .cam-tools button { padding: 4px 10px; font-size: 14px; background: rgba(0,0,0,.55); color: #fff; border-color: rgba(255,255,255,.4); }
+  .cam-msg { position: absolute; left: 8px; bottom: 8px; color: #fff; font-size: 13px; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 6px; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--card); border-radius: 12px; padding: 20px; max-width: 440px; width: 100%; border-top: 6px solid var(--err); }
+  .modal h2 { margin: 0 0 8px; font-size: 19px; color: var(--err); }
+  .modal p { margin: 0 0 16px; }
+  .modal .row { justify-content: flex-end; }
+  /* Мобильная версия: компактная шапка, основное место — под список товаров */
+  @media (max-width: 600px) {
+    .hide-sm, .desk { display: none; }
+    .mob { display: inline; }
+    main { padding: 0 8px 24px; }
+    th, td { padding: 6px 5px; }
+    header { padding: 8px 0 6px; }
+    h1 { display: none; }
+    .card { padding: 8px 10px; margin-bottom: 6px; }
+    .conn { flex-wrap: nowrap; }
+    .conn button { padding: 5px 10px; font-size: 14px; }
+    .conn .status { font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cam { height: 28vh; margin-bottom: 6px; }
+    .menu { position: relative; }
+    .menu-btn { display: block; padding: 3px 12px; font-weight: 700; }
+    .menu-panel { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 6; flex-direction: column; align-items: stretch;
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; min-width: 200px; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+    .menu.open .menu-panel { display: flex; }
+    .stats { gap: 6px 12px; }
+    .stats b { font-size: 17px; }
+    .stats .lbl, .stats .spacer { display: none; }
+    .stats .lastbox { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .progress { height: 4px; margin-top: 6px; }
+    .filters { display: block; margin-bottom: 0; }
+    #search { width: 100%; padding: 5px 10px; margin-bottom: 6px; }
+    .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+    .chips::-webkit-scrollbar { display: none; }
+    .filters button { padding: 3px 10px; font-size: 13px; white-space: nowrap; flex: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Инвентаризация склада</h1>
+
+    <div class="card conn">
+      <button id="btnSerial" class="primary">Подключить<span class="desk"> сканер</span></button>
+      <button id="btnSerialOff" disabled>Отключить</button>
+      <span class="status"><span id="serialDot" class="dot"></span><span id="serialStatus">Не подключено</span></span>
+      <span class="spacer"></span>
+      <button id="btnCam" title="Сканировать камерой">📷<span class="desk"> Камера</span></button>
+      <div class="menu" id="menu">
+        <button class="menu-btn" id="menuBtn">⋯</button>
+        <div class="menu-panel">
+          <label><input type="checkbox" id="optKeyboard" checked> Сканер-клавиатура</label>
+          <label title="Максимальная пауза между символами от сканера. Если коды не распознаются — увеличьте; если ручной ввод принимается за скан — уменьшите.">Задержка, мс <input type="number" id="optKbGap" min="10" max="1000" step="10" value="300" style="width:75px"></label>
+          <label><input type="checkbox" id="optBeep" checked> Звук</label>
+          <button class="mob" data-act="csv">Скачать CSV</button>
+          <button class="mob" data-act="reset">Начать заново</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="camBox" class="cam" hidden>
+      <video id="camVideo" playsinline muted></video>
+      <div id="camFrame" class="cam-frame"></div>
+      <div class="cam-tools">
+        <button id="camTorch" hidden>Фонарик</button>
+        <button id="camClose">✕</button>
+      </div>
+      <div id="camMsg" class="cam-msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="stats">
+        <div class="lastbox"><span class="lbl">Последний товар</span><b id="lastArt">—</b></div>
+        <div><span class="lbl">Отсканировано / остаток</span><b id="lastQty">—</b></div>
+        <span class="spacer"></span>
+        <div><span class="lbl">Позиций сходится</span><span class="muted mob">Поз. </span><b id="sumPos">0 / 0</b></div>
+        <div><span class="lbl">Штук</span><span class="muted mob">Шт. </span><b id="sumQty">0 / 0</b></div>
+      </div>
+      <div class="progress"><div id="progress"></div></div>
+    </div>
+
+    <div class="filters">
+      <input type="text" id="search" placeholder="Поиск по артикулу или штрихкоду">
+      <div class="chips">
+        <button data-f="all" class="active">Все <span id="cAll"></span></button>
+        <button data-f="none">Не начато <span id="cNone"></span></button>
+        <button data-f="short"><span class="chip" style="background:var(--row-short)"></span>Недостача <span id="cShort"></span></button>
+        <button data-f="ok"><span class="chip" style="background:var(--row-ok)"></span>Сходится <span id="cOk"></span></button>
+        <button data-f="over"><span class="chip" style="background:var(--row-over)"></span>Излишек <span id="cOver"></span></button>
+      </div>
+      <button class="desk" data-act="csv">Скачать CSV</button>
+      <button class="desk" data-act="reset">Начать заново</button>
+    </div>
+  </header>
+
+  <table>
+    <thead><tr><th class="num hide-sm">№</th><th>Артикул</th><th>Штрихкод</th><th class="num">Остаток</th><th class="num">Факт</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+
+<div id="modal" class="modal-bg">
+  <div class="modal">
+    <h2 id="modalTitle"></h2>
+    <p id="modalText"></p>
+    <div class="row">
+      <button id="modalNo"></button>
+      <button id="modalYes" class="danger"></button>
+    </div>
+  </div>
+</div>
+
+<script src="products.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const STORAGE_KEY = 'inventory-counts-v2';
+
+const byBarcode = new Map(PRODUCTS.map(p => [p.barcode, p]));
+const rowOf = new Map();
+let counts = loadCounts();
+let filter = 'all';
+
+function loadCounts() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch (e) { return {}; }
+}
+function saveCounts() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(counts)); } catch (e) { /* без сохранения */ }
+}
+
+function stateOf(p) {
+  const c = counts[p.barcode] || 0;
+  if (c === 0) return 'none';
+  if (c < p.stock) return 'short';
+  return c === p.stock ? 'ok' : 'over';
+}
+
+// ---------- Таблица ----------
+
+function buildTable() {
+  const tbody = $('rows');
+  PRODUCTS.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="num hide-sm"></td><td class="mono"></td><td class="mono"></td><td class="num"></td><td class="num"></td>
+      <td class="act"><button title="Убрать одну">−</button> <button title="Добавить одну">+</button></td>`;
+    tr.children[0].textContent = i + 1;
+    tr.children[1].textContent = p.article;
+    tr.children[2].textContent = p.barcode;
+    tr.children[3].textContent = p.stock;
+    const [minus, plus] = tr.querySelectorAll('button');
+    minus.onclick = () => changeCount(p, -1);
+    plus.onclick = () => registerScan(p.barcode);
+    tbody.appendChild(tr);
+    rowOf.set(p.barcode, tr);
+    renderRow(p);
+  });
+  applyFilter();
+  renderSummary();
+}
+
+function renderRow(p) {
+  const tr = rowOf.get(p.barcode);
+  const st = stateOf(p);
+  tr.className = st === 'none' ? '' : st;
+  tr.dataset.state = st;
+  tr.children[4].textContent = counts[p.barcode] || 0;
+}
+
+function renderSummary() {
+  const n = { none: 0, short: 0, ok: 0, over: 0 };
+  let scanned = 0, stock = 0;
+  for (const p of PRODUCTS) {
+    n[stateOf(p)]++;
+    scanned += counts[p.barcode] || 0;
+    stock += p.stock;
+  }
+  $('cAll').textContent = PRODUCTS.length;
+  $('cNone').textContent = n.none;
+  $('cShort').textContent = n.short;
+  $('cOk').textContent = n.ok;
+  $('cOver').textContent = n.over;
+  $('sumPos').textContent = `${n.ok} / ${PRODUCTS.length}`;
+  $('sumQty').textContent = `${scanned} / ${stock}`;
+  $('progress').style.width = (n.ok / PRODUCTS.length * 100) + '%';
+}
+
+function applyFilter() {
+  const q = $('search').value.trim().toLowerCase();
+  for (const p of PRODUCTS) {
+    const tr = rowOf.get(p.barcode);
+    const matchText = !q || p.article.toLowerCase().includes(q) || p.barcode.includes(q);
+    const matchState = filter === 'all' || tr.dataset.state === filter;
+    tr.style.display = matchText && matchState ? '' : 'none';
+  }
+}
+
+function showRow(p) {
+  const tr = rowOf.get(p.barcode);
+  if (tr.style.display === 'none') {
+    // Строку скрывает фильтр — сбрасываем, чтобы товар был виден
+    $('search').value = '';
+    setFilter('all');
+  }
+  const headerH = document.querySelector('header').offsetHeight;
+  // Центр строки — в середину видимой области под закреплённой шапкой
+  const top = tr.getBoundingClientRect().top + window.scrollY + tr.offsetHeight / 2
+    - headerH - (window.innerHeight - headerH) / 2;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  tr.classList.remove('flash');
+  void tr.offsetWidth;
+  tr.classList.add('flash');
+}
+
+function setFilter(f) {
+  filter = f;
+  document.querySelectorAll('[data-f]').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+  applyFilter();
+}
+
+// ---------- Обработка сканов ----------
+
+function changeCount(p, delta) {
+  counts[p.barcode] = Math.max(0, (counts[p.barcode] || 0) + delta);
+  if (!counts[p.barcode]) delete counts[p.barcode];
+  saveCounts();
+  renderRow(p);
+  renderSummary();
+  $('lastArt').textContent = p.article;
+  $('lastQty').textContent = `${counts[p.barcode] || 0} / ${p.stock}`;
+}
+
+async function registerScan(code) {
+  code = code.trim();
+  if (!code) return;
+  if (modalOpen) { beep('err'); return; }
+
+  const p = byBarcode.get(code);
+  if (!p) {
+    beep('err');
+    await ask('Штрихкод не найден', `Товара со штрихкодом ${code} нет в списке.`, 'OK');
+    return;
+  }
+
+  showRow(p);
+  const current = counts[p.barcode] || 0;
+  if (current + 1 > p.stock) {
+    beep('err');
+    const yes = await ask('Превышение остатка',
+      `${p.article}: остаток ${p.stock}, уже отсканировано ${current}. Добавить ещё одну штуку?`,
+      'Добавить', 'Отмена');
+    if (!yes) return;
+  } else {
+    beep('ok');
+  }
+  changeCount(p, 1);
+  showRow(p);
+}
+
+// ---------- Диалог подтверждения ----------
+// Кнопки нажимаются только мышью/касанием: Enter от сканера не должен подтверждать превышение.
+
+let modalOpen = false;
+
+function ask(title, text, yesLabel, noLabel) {
+  return new Promise(resolve => {
+    modalOpen = true;
+    $('modalTitle').textContent = title;
+    $('modalText').textContent = text;
+    $('modalYes').textContent = yesLabel;
+    $('modalNo').textContent = noLabel || '';
+    $('modalNo').style.display = noLabel ? '' : 'none';
+    $('modal').classList.add('open');
+    document.activeElement?.blur();
+    const close = result => {
+      $('modal').classList.remove('open');
+      modalOpen = false;
+      resolve(result);
+    };
+    $('modalYes').onclick = () => close(true);
+    $('modalNo').onclick = () => close(false);
+  });
+}
+
+// ---------- Звук ----------
+
+let audioCtx;
+function beep(kind) {
+  if (!$('optBeep').checked) return;
+  try {
+    audioCtx ??= new AudioContext();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const err = kind === 'err';
+    osc.type = err ? 'square' : 'sine';
+    osc.frequency.value = err ? 300 : 1800;
+    gain.gain.value = err ? 0.06 : 0.08;
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + (err ? 0.4 : 0.08));
+  } catch (e) { /* звук необязателен */ }
+}
+
+// Собирает поток символов в целые коды: конец кода — CR/LF или пауза.
+class LineAssembler {
+  constructor(onLine) {
+    this.onLine = onLine;
+    this.decoder = new TextDecoder('utf-8');
+    this.buf = '';
+    this.timer = null;
+  }
+  push(bytes) {
+    this.buf += this.decoder.decode(bytes, { stream: true });
+    const parts = this.buf.split(/\r\n|\r|\n/);
+    this.buf = parts.pop();
+    parts.forEach(p => this.onLine(p));
+    clearTimeout(this.timer);
+    if (this.buf) this.timer = setTimeout(() => this.flush(), 150);
+  }
+  flush() {
+    if (this.buf) this.onLine(this.buf);
+    this.buf = '';
+  }
+}
+
+// ---------- Сканер через COM-порт (Bluetooth SPP) ----------
+
+let serialPort = null;
+let serialReader = null;
+let serialStop = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function setSerialStatus(text, state) {
+  $('serialStatus').textContent = text;
+  $('serialDot').className = 'dot' + (state ? ' ' + state : '');
+  $('btnSerial').disabled = !!serialPort;
+  $('btnSerialOff').disabled = !serialPort;
+}
+
+async function serialConnect() {
+  if (!('serial' in navigator)) {
+    alert('Web Serial недоступен. Нужен Chrome/Edge на компьютере и HTTPS или localhost.');
+    return;
+  }
+  let port;
+  try {
+    port = await navigator.serial.requestPort();
+  } catch (e) {
+    return;
+  }
+  serialPort = port;
+  serialStop = false;
+  try {
+    await serialSession(port);
+  } catch (e) {
+    serialPort = null;
+    setSerialStatus('Порт не открылся — сканер включён? Выбран исходящий порт?', 'err');
+  }
+}
+
+// Держит порт открытым, при обрыве связи переоткрывает его.
+async function serialSession(port) {
+  for (let attempt = 0; !serialStop; attempt++) {
+    if (attempt > 0) {
+      await sleep(3000);
+      if (serialStop) break;
+    }
+    setSerialStatus('Открытие порта…');
+    try {
+      await port.open({ baudRate: 9600 });
+    } catch (e) {
+      if (attempt === 0) throw e;
+      setSerialStatus('Нет связи, повтор…', 'err');
+      continue;
+    }
+    attempt = 0;
+    setSerialStatus('Подключено', 'on');
+
+    await serialReadLoop(port);
+    try { await port.close(); } catch (e) { /* порт уже закрыт */ }
+    if (!serialStop) setSerialStatus('Связь потеряна', 'err');
+  }
+  serialPort = null;
+  setSerialStatus('Не подключено');
+}
+
+async function serialReadLoop(port) {
+  const asm = new LineAssembler(registerScan);
+  while (port.readable && !serialStop) {
+    serialReader = port.readable.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await serialReader.read();
+        if (done) break;
+        if (value) asm.push(value);
+      }
+    } catch (e) {
+      break;
+    } finally {
+      serialReader.releaseLock();
+      serialReader = null;
+    }
+  }
+  asm.flush();
+}
+
+async function serialDisconnect() {
+  serialStop = true;
+  try { await serialReader?.cancel(); } catch (e) { /* уже закрыт */ }
+}
+
+// ---------- Сканер в режиме клавиатуры ----------
+// Сканер «печатает» очень быстро и завершает Enter — отличаем это от ручного ввода по скорости.
+
+const kb = { buf: '', lastTime: 0, timer: null };
+const KB_MIN_LEN = 3;
+const KB_GAP_KEY = 'inventory-kb-gap';
+
+// Максимальная пауза между символами (мс), настраивается в интерфейсе
+function kbGap() {
+  return Math.max(10, parseInt($('optKbGap').value, 10) || 300);
+}
+try { $('optKbGap').value = localStorage.getItem(KB_GAP_KEY) || 300; } catch (e) { /* по умолчанию */ }
+$('optKbGap').onchange = () => {
+  $('optKbGap').value = kbGap();
+  try { localStorage.setItem(KB_GAP_KEY, kbGap()); } catch (e) { /* без сохранения */ }
+};
+
+document.addEventListener('keydown', e => {
+  if (modalOpen && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
+  if (!$('optKeyboard').checked) return;
+  if (e.target.matches('input[type=text], input[type=number]')) return;
+  const now = performance.now();
+  if (now - kb.lastTime > kbGap()) kb.buf = '';
+  kb.lastTime = now;
+
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    if (kb.buf.length >= KB_MIN_LEN) {
+      e.preventDefault();
+      registerScan(kb.buf);
+    }
+    kb.buf = '';
+    return;
+  }
+  if (e.key.length === 1) {
+    kb.buf += e.key;
+    clearTimeout(kb.timer);
+    kb.timer = setTimeout(() => {
+      if (kb.buf.length >= KB_MIN_LEN + 3) registerScan(kb.buf);
+      kb.buf = '';
+    }, kbGap() + 150);
+  }
+});
+
+// ---------- Сканирование камерой ----------
+// Chrome на Android распознаёт штрихкоды сам (BarcodeDetector), в остальных браузерах подгружается ZXing.
+
+const CAM_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code', 'data_matrix'];
+const CAM_REPEAT_MS = 1200;  // тот же код засчитывается снова, только если пропадал из кадра на это время
+const cam = { stream: null, timer: null, detect: null, seen: new Map(), torch: false };
+
+function camMsg(text) { $('camMsg').textContent = text; }
+
+// Контрольная цифра EAN-8 / UPC-A / EAN-13 — отсекает ошибочные распознавания
+function validCheckDigit(code) {
+  if (!/^(\d{8}|\d{12}|\d{13})$/.test(code)) return true;
+  const d = [...code].map(Number);
+  const check = d.pop();
+  const sum = d.reverse().reduce((s, x, i) => s + x * (i % 2 === 0 ? 3 : 1), 0);
+  return (10 - sum % 10) % 10 === check;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('не удалось загрузить ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function createDetector() {
+  if ('BarcodeDetector' in window) {
+    const supported = await BarcodeDetector.getSupportedFormats();
+    const formats = CAM_FORMATS.filter(f => supported.includes(f));
+    if (formats.length) {
+      const detector = new BarcodeDetector({ formats });
+      return async video => (await detector.detect(video)).map(b => b.rawValue);
+    }
+  }
+  await loadScript('https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js');
+  const reader = new ZXing.MultiFormatReader();
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  return async video => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    try {
+      const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+      return [reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source))).getText()];
+    } catch (e) {
+      return [];
+    }
+  };
+}
+
+async function camStart() {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    await ask('Камера недоступна', 'Браузер даёт доступ к камере только по HTTPS или на localhost.', 'OK');
+    return;
+  }
+  $('camBox').hidden = false;
+  $('btnCam').classList.add('active');
+  camMsg('Запуск камеры…');
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    if ($('camBox').hidden) return camStop();  // закрыли, пока камера запускалась
+    const video = $('camVideo');
+    video.srcObject = cam.stream;
+    await video.play();
+    cam.detect ??= await createDetector();
+    const track = cam.stream.getVideoTracks()[0];
+    $('camTorch').hidden = !track.getCapabilities?.().torch;
+    camMsg('Наведите на штрихкод');
+    camLoop();
+  } catch (e) {
+    camStop();
+    await ask('Камера недоступна', 'Не удалось включить камеру: ' + e.message, 'OK');
+  }
+}
+
+function camLoop() {
+  cam.timer = setTimeout(async () => {
+    if (!cam.stream) return;
+    const video = $('camVideo');
+    if (video.readyState >= 2) {
+      try { (await cam.detect(video)).forEach(onCamCode); } catch (e) { /* пропускаем кадр */ }
+    }
+    camLoop();
+  }, 120);
+}
+
+function onCamCode(code) {
+  code = code.trim();
+  if (!code || !validCheckDigit(code)) return;
+  const now = performance.now();
+  const last = cam.seen.get(code);
+  cam.seen.set(code, now);
+  // Пока код в кадре или открыт диалог — повторно не засчитываем
+  if ((last && now - last < CAM_REPEAT_MS) || modalOpen) return;
+
+  $('camFrame').classList.add('hit');
+  setTimeout(() => $('camFrame').classList.remove('hit'), 300);
+  navigator.vibrate?.(60);
+  camMsg(code);
+  registerScan(code);
+}
+
+function camStop() {
+  clearTimeout(cam.timer);
+  cam.stream?.getTracks().forEach(t => t.stop());
+  cam.stream = null;
+  cam.torch = false;
+  $('camVideo').srcObject = null;
+  $('camBox').hidden = true;
+  $('camTorch').hidden = true;
+  $('btnCam').classList.remove('active');
+}
+
+async function camToggleTorch() {
+  const track = cam.stream?.getVideoTracks()[0];
+  if (!track) return;
+  try {
+    await track.applyConstraints({ advanced: [{ torch: !cam.torch }] });
+    cam.torch = !cam.torch;
+  } catch (e) { /* фонарик не поддерживается */ }
+}
+
+$('btnCam').onclick = () => cam.stream || !$('camBox').hidden ? camStop() : camStart();
+$('camClose').onclick = camStop;
+$('camTorch').onclick = camToggleTorch;
+document.addEventListener('visibilitychange', () => { if (document.hidden) camStop(); });
+
+// ---------- Экспорт и сброс ----------
+
+function exportCsv() {
+  const esc = s => `"${String(s).replace(/"/g, '""')}"`;
+  const names = { none: 'не отсканировано', short: 'недостача', ok: 'сходится', over: 'излишек' };
+  const lines = ['Артикул;Штрихкод;Остаток;Факт;Разница;Статус', ...PRODUCTS.map(p => {
+    const c = counts[p.barcode] || 0;
+    return [p.article, p.barcode, p.stock, c, c - p.stock, names[stateOf(p)]].map(esc).join(';');
+  })];
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `inventory_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function resetAll() {
+  const yes = await ask('Начать заново?', 'Все отсканированные количества будут обнулены.', 'Обнулить', 'Отмена');
+  if (!yes) return;
+  counts = {};
+  saveCounts();
+  PRODUCTS.forEach(renderRow);
+  renderSummary();
+  applyFilter();
+  $('lastArt').textContent = '—';
+  $('lastQty').textContent = '—';
+}
+
+// Меню «⋯» есть только в мобильной версии
+const closeMenu = () => $('menu').classList.remove('open');
+$('menuBtn').onclick = () => $('menu').classList.toggle('open');
+document.addEventListener('click', e => { if (!$('menu').contains(e.target)) closeMenu(); });
+
+$('btnSerial').onclick = serialConnect;
+$('btnSerialOff').onclick = serialDisconnect;
+const actions = { csv: exportCsv, reset: resetAll };
+document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => { closeMenu(); actions[b.dataset.act](); });
+$('search').oninput = applyFilter;
+document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => setFilter(b.dataset.f));
+
+buildTable();
+</script>
+</body>
+</html>
