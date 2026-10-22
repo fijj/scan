@@ -59,7 +59,8 @@
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 500; font-size: 13px; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.mono { font-family: ui-monospace, Consolas, monospace; }  td.act { white-space: nowrap; text-align: right; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; }
+  .col-hidden { display: none; }  td.act { white-space: nowrap; text-align: right; }
   td.act button { padding: 2px 9px; }
   tr.ok td { background: var(--row-ok); }
   tr.over td { background: var(--row-over); }
@@ -186,7 +187,7 @@
   </header>
 
   <table>
-    <thead><tr><th class="num hide-sm">№</th><th>Артикул</th><th>Штрихкод</th><th class="num">Остаток</th><th class="num">Факт</th><th></th></tr></thead>
+    <thead><tr><th class="num hide-sm">№</th><th>Артикул</th><th class="col-hidden">Штрихкод</th><th class="num">Остаток</th><th class="num">Факт</th><th></th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
 </main>
@@ -236,7 +237,7 @@ function buildTable() {
   const tbody = $('rows');
   PRODUCTS.forEach((p, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="num hide-sm"></td><td class="mono"></td><td class="mono"></td><td class="num"></td><td class="num"></td>
+    tr.innerHTML = `<td class="num hide-sm"></td><td class="mono"></td><td class="mono col-hidden"></td><td class="num"></td><td class="num"></td>
       <td class="act"><button title="Убрать одну">−</button> <button title="Добавить одну">+</button></td>`;
     tr.children[0].textContent = i + 1;
     tr.children[1].textContent = p.article;
