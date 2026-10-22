@@ -66,6 +66,7 @@
   .cam video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .cam-frame { position: absolute; left: 12%; right: 12%; top: 28%; bottom: 28%; border: 2px solid rgba(255,255,255,.8); border-radius: 8px; transition: border-color .15s, background .15s; }
   .cam-frame.hit { border-color: var(--ok); background: rgba(22,163,74,.2); }
+  .cam-frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   .cam-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
   .cam-tools button { padding: 4px 10px; font-size: 14px; background: rgba(0,0,0,.55); color: #fff; border-color: rgba(255,255,255,.4); }
   .cam-msg { position: absolute; left: 8px; bottom: 8px; color: #fff; font-size: 13px; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 6px; }
@@ -131,7 +132,7 @@
 
     <div id="camBox" class="cam" hidden>
       <video id="camVideo" playsinline muted></video>
-      <div id="camFrame" class="cam-frame"></div>
+      <div id="camFrame" class="cam-frame"><canvas id="camOverlay"></canvas></div>
       <div class="cam-tools">
         <button id="camTorch" hidden>Фонарик</button>
         <button id="camClose">✕</button>
@@ -556,7 +557,8 @@ async function createDetector() {
     const formats = CAM_FORMATS.filter(f => supported.includes(f));
     if (formats.length) {
       const detector = new BarcodeDetector({ formats });
-      return async canvas => (await detector.detect(canvas)).map(b => b.rawValue);
+      return async canvas => (await detector.detect(canvas))
+        .map(b => ({ text: b.rawValue, points: b.cornerPoints || [] }));
     }
   }
   await loadScript('https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js');
@@ -564,7 +566,9 @@ async function createDetector() {
   return async canvas => {
     try {
       const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
-      return [reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source))).getText()];
+      const r = reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source)));
+      const points = (r.getResultPoints() || []).map(p => ({ x: p.getX(), y: p.getY() }));
+      return [{ text: r.getText(), points }];
     } catch (e) {
       return [];
     }
@@ -625,10 +629,56 @@ function camLoop() {
     if (!cam.stream) return;
     const video = $('camVideo');
     if (video.readyState >= 2 && video.videoWidth) {
-      try { (await cam.detect(grabFrameArea(video))).forEach(onCamCode); } catch (e) { /* пропускаем кадр */ }
+      try {
+        const found = (await cam.detect(grabFrameArea(video)))
+          .filter(r => r.text && validCheckDigit(r.text.trim()));
+        drawOverlay(found);
+        found.forEach(r => onCamCode(r.text));
+      } catch (e) { /* пропускаем кадр */ }
     }
     camLoop();
   }, 120);
+}
+
+// Обводит найденные коды поверх видео: зелёным — товар из списка, красным — неизвестный.
+// Координаты точек — в пикселях вырезанной области, она растянута на всю рамку.
+let overlayDrawnAt = 0;
+function drawOverlay(found) {
+  const overlay = $('camOverlay');
+  const now = performance.now();
+  // Детектор может пропустить кадр — не гасим обводку сразу, чтобы не мерцала
+  if (!found.length && now - overlayDrawnAt < 300) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const w = overlay.clientWidth, h = overlay.clientHeight;
+  if (overlay.width !== Math.round(w * dpr)) overlay.width = Math.round(w * dpr);
+  if (overlay.height !== Math.round(h * dpr)) overlay.height = Math.round(h * dpr);
+  const ctx = overlay.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!found.length) return;
+  overlayDrawnAt = now;
+
+  const kx = w / camCanvas.width, ky = h / camCanvas.height;
+  for (const r of found) {
+    const pts = r.points.map(p => [p.x * kx, p.y * ky]);
+    if (!pts.length) continue;
+    const color = byBarcode.has(r.text.trim()) ? '#22c55e' : '#ef4444';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color + '40';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    if (pts.length > 2) {
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.lineWidth = 6;  // у линейных кодов ZXing даёт только две точки — рисуем полосу
+    }
+    ctx.stroke();
+  }
 }
 
 function onCamCode(code) {
@@ -653,6 +703,8 @@ function camStop() {
   cam.stream = null;
   cam.torch = false;
   $('camVideo').srcObject = null;
+  const overlay = $('camOverlay');
+  overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
   $('camBox').hidden = true;
   $('camTorch').hidden = true;
   $('btnCam').classList.remove('active');
