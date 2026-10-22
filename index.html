@@ -549,23 +549,19 @@ function loadScript(src) {
   });
 }
 
+// Детектор получает только вырезанную область рамки, а не весь кадр
 async function createDetector() {
   if ('BarcodeDetector' in window) {
     const supported = await BarcodeDetector.getSupportedFormats();
     const formats = CAM_FORMATS.filter(f => supported.includes(f));
     if (formats.length) {
       const detector = new BarcodeDetector({ formats });
-      return async video => (await detector.detect(video)).map(b => b.rawValue);
+      return async canvas => (await detector.detect(canvas)).map(b => b.rawValue);
     }
   }
   await loadScript('https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js');
   const reader = new ZXing.MultiFormatReader();
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  return async video => {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
+  return async canvas => {
     try {
       const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
       return [reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source))).getText()];
@@ -603,12 +599,33 @@ async function camStart() {
   }
 }
 
+const camCanvas = document.createElement('canvas');
+const camCtx = camCanvas.getContext('2d', { willReadFrequently: true });
+
+// Вырезает из кадра область под рамкой. Видео показано с object-fit: cover,
+// поэтому координаты рамки на экране пересчитываются в пиксели видео.
+function grabFrameArea(video) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const vr = video.getBoundingClientRect();
+  const fr = $('camFrame').getBoundingClientRect();
+  const scale = Math.max(vr.width / vw, vr.height / vh);
+  const ox = (vr.width - vw * scale) / 2;
+  const oy = (vr.height - vh * scale) / 2;
+  const sx = (fr.left - vr.left - ox) / scale;
+  const sy = (fr.top - vr.top - oy) / scale;
+  const sw = fr.width / scale, sh = fr.height / scale;
+  camCanvas.width = Math.round(sw);
+  camCanvas.height = Math.round(sh);
+  camCtx.drawImage(video, sx, sy, sw, sh, 0, 0, camCanvas.width, camCanvas.height);
+  return camCanvas;
+}
+
 function camLoop() {
   cam.timer = setTimeout(async () => {
     if (!cam.stream) return;
     const video = $('camVideo');
-    if (video.readyState >= 2) {
-      try { (await cam.detect(video)).forEach(onCamCode); } catch (e) { /* пропускаем кадр */ }
+    if (video.readyState >= 2 && video.videoWidth) {
+      try { (await cam.detect(grabFrameArea(video))).forEach(onCamCode); } catch (e) { /* пропускаем кадр */ }
     }
     camLoop();
   }, 120);
