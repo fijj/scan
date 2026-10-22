@@ -68,6 +68,10 @@
   .cam-frame.hit { border-color: var(--ok); background: rgba(22,163,74,.2); }
   .cam-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
   .cam-tools button { padding: 4px 10px; font-size: 14px; background: rgba(0,0,0,.55); color: #fff; border-color: rgba(255,255,255,.4); }
+  .scanbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--border); }
+  .scanbar[hidden] { display: none; }
+  .scanbar button { display: block; width: 100%; max-width: 600px; margin: 0 auto; padding: 16px; font-size: 18px; font-weight: 600; touch-action: manipulation; user-select: none; }
+  body.has-scanbar main { padding-bottom: 100px; }
   .cam-msg { position: absolute; left: 8px; bottom: 8px; color: #fff; font-size: 13px; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 6px; }
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
   .modal-bg.open { display: flex; }
@@ -123,6 +127,7 @@
           <label><input type="checkbox" id="optKeyboard" checked> Сканер-клавиатура</label>
           <label title="Максимальная пауза между символами от сканера. Если коды не распознаются — увеличьте; если ручной ввод принимается за скан — уменьшите.">Задержка, мс <input type="number" id="optKbGap" min="10" max="1000" step="10" value="300" style="width:75px"></label>
           <label><input type="checkbox" id="optBeep" checked> Звук</label>
+          <label title="Камера засчитывает код только по нажатию кнопки «Сканировать» внизу экрана"><input type="checkbox" id="optCamTrigger" checked> Камера: скан по кнопке</label>
           <button class="mob" data-act="csv">Скачать CSV</button>
           <button class="mob" data-act="reset">Начать заново</button>
         </div>
@@ -169,6 +174,10 @@
     <tbody id="rows"></tbody>
   </table>
 </main>
+
+<div id="scanBar" class="scanbar" hidden>
+  <button id="btnTrigger" class="primary">Сканировать</button>
+</div>
 
 <div id="modal" class="modal-bg">
   <div class="modal">
@@ -592,6 +601,7 @@ async function camStart() {
     const track = cam.stream.getVideoTracks()[0];
     $('camTorch').hidden = !track.getCapabilities?.().torch;
     camMsg('Наведите на штрихкод');
+    updateScanBar();
     camLoop();
   } catch (e) {
     camStop();
@@ -635,17 +645,72 @@ function onCamCode(code) {
   code = code.trim();
   if (!code || !validCheckDigit(code)) return;
   const now = performance.now();
+
+  if (triggerMode()) {
+    // Скан по кнопке: запоминаем, что сейчас в рамке; засчитываем, если кнопка нажата
+    cam.lastFound = { code, at: now };
+    if (now < cam.armedUntil && !modalOpen) {
+      cam.armedUntil = 0;
+      acceptCamCode(code);
+    }
+    return;
+  }
+
   const last = cam.seen.get(code);
   cam.seen.set(code, now);
   // Пока код в кадре или открыт диалог — повторно не засчитываем
   if ((last && now - last < CAM_REPEAT_MS) || modalOpen) return;
+  acceptCamCode(code);
+}
 
+function acceptCamCode(code) {
   $('camFrame').classList.add('hit');
   setTimeout(() => $('camFrame').classList.remove('hit'), 300);
   navigator.vibrate?.(60);
   camMsg(code);
   registerScan(code);
 }
+
+// ---------- Скан камерой по кнопке ----------
+// Если код уже в рамке — засчитывается сразу, иначе ждём его появления ещё CAM_ARM_MS.
+
+const CAM_ARM_MS = 1500;
+const triggerMode = () => $('optCamTrigger').checked;
+
+function camTrigger() {
+  if (!cam.stream || modalOpen) return;
+  const now = performance.now();
+  if (cam.lastFound && now - cam.lastFound.at < 300) {
+    cam.armedUntil = 0;
+    acceptCamCode(cam.lastFound.code);
+    return;
+  }
+  cam.armedUntil = now + CAM_ARM_MS;
+  camMsg('Ищу код в рамке…');
+  setTimeout(() => {
+    if (cam.armedUntil && performance.now() >= cam.armedUntil) {
+      cam.armedUntil = 0;
+      beep('err');
+      camMsg('Код в рамке не найден');
+    }
+  }, CAM_ARM_MS + 50);
+}
+
+function updateScanBar() {
+  const on = !!cam.stream && triggerMode();
+  $('scanBar').hidden = !on;
+  document.body.classList.toggle('has-scanbar', on);
+}
+
+$('btnTrigger').onclick = camTrigger;
+$('optCamTrigger').onchange = updateScanBar;
+// Кнопки громкости: Chrome на Android их странице не передаёт, но другие браузеры могут
+document.addEventListener('keydown', e => {
+  if (cam.stream && triggerMode() && (e.key === 'AudioVolumeUp' || e.key === 'AudioVolumeDown')) {
+    e.preventDefault();
+    camTrigger();
+  }
+});
 
 function camStop() {
   clearTimeout(cam.timer);
@@ -656,6 +721,9 @@ function camStop() {
   $('camBox').hidden = true;
   $('camTorch').hidden = true;
   $('btnCam').classList.remove('active');
+  cam.armedUntil = 0;
+  cam.lastFound = null;
+  updateScanBar();
 }
 
 async function camToggleTorch() {
